@@ -10,6 +10,7 @@ import android.app.Activity;
 import android.app.ProgressDialog;
 import android.content.Context;
 import android.content.Intent;
+import android.util.Log;
 import android.view.Menu;
 import android.view.View;
 import android.view.ViewGroup;
@@ -18,6 +19,8 @@ import android.widget.AdapterView.OnItemClickListener;
 import android.widget.EditText;
 import android.widget.ListView;
 import android.widget.TextView;
+import android.widget.Toast;
+
 public class MainActivity extends Activity {
 
     private String path="";
@@ -61,7 +64,8 @@ public class MainActivity extends Activity {
 
 
     private void refreshThumbnails(){
-        context.sendBroadcast(new Intent(Intent.ACTION_MEDIA_MOUNTED, Uri.parse("file://"+ Environment.getExternalStorageDirectory())));
+        context.sendBroadcast(new Intent(Intent.ACTION_MEDIA_MOUNTED,
+                Uri.parse("file://"+ Environment.getExternalStorageDirectory())));
     }
     public boolean onCreateOptionsMenu(Menu menu) {
         // Inflate the menu; this adds items to the action bar if it is present.
@@ -75,7 +79,8 @@ public class MainActivity extends Activity {
             //selected item
             ViewGroup vg=(ViewGroup)view;
             String selectedItem = ((TextView) vg.findViewById(R.id.label)).getText().toString();
-            path=path+"/"+selectedItem;
+            path = path + "/" + selectedItem;
+            Toast.makeText(MainActivity.this,path,Toast.LENGTH_SHORT).show();
             //et.setText(path);
             listDirContents();
         }
@@ -86,19 +91,21 @@ public class MainActivity extends Activity {
 
 
     private void listDirContents(){
-        ListView l=(ListView) findViewById(R.id.files_list);
+        ListView listView=(ListView) findViewById(R.id.files_list);
         if(path!=null){
+            Toast.makeText(MainActivity.this,path + "mmmd",Toast.LENGTH_SHORT).show();
+
             try{
-                File f=new File(path);
+                File f = new File(path);
                 if(f!=null){
                     if(f.isDirectory()){
                         String[] contents=f.list();
                         if(contents.length>0){
+                            selectedFile = path;
                             //create the data source for the list
-                            ListAdapter lm=new ListAdapter(this,R.layout.list_layout,R.id.label,contents,path);
+                            ListAdapter listAdapter = new ListAdapter(this,R.layout.list_layout,R.id.label,contents,path);
                             //supply the data source to the list so that they are ready to display
-                            l.setAdapter(lm);
-                            selectedFile=path;
+                            listView.setAdapter(listAdapter);
                         }
                         else
                         {

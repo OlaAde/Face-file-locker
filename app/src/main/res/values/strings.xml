@@ -1,3 +1,9 @@
 <resources>
     <string name="app_name">Face App Locker</string>
+
+    <string name="action_settings">Settings</string>
+    <string name="label_lock">Lock</string>
+    <string name="txt_hint">Enter password</string>
+    <string name="label_unlock">Unlock</string>
+    <string name="icon_image">Icon</string>
 </resources>
