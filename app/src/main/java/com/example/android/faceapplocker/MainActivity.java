@@ -30,8 +30,6 @@ public class MainActivity extends Activity {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_main);
         this.context=this;
-
-
     }
 
     protected void onStart(){
@@ -50,13 +48,16 @@ public class MainActivity extends Activity {
     }
 
     public void goBack(){
-        if(path.length()>1){ //up one level of directory structure
-            File f=new File(path);
-            path=f.getParent();
-            listDirContents();
+        if( path != null){
+            if (path.length()>=1) {
+                //up one level of directory structure
+                File f=new File(path);
+                path=f.getParent();
+                listDirContents();
+            }
         }
         else{
-            refreshThumbnails();
+            //refreshThumbnails();
             System.exit(0); //exit app
 
         }
