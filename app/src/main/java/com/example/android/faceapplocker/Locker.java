@@ -7,6 +7,7 @@ package com.example.android.faceapplocker;
 import android.content.Context;
 import android.os.Environment;
 import android.util.Log;
+import android.webkit.MimeTypeMap;
 
 import org.apache.commons.io.FileUtils;
 
@@ -26,193 +27,319 @@ import java.util.zip.ZipEntry;
 import java.util.zip.ZipFile;
 import java.util.zip.ZipOutputStream;
 
-class Locker {
-    String dirpath;
+class Locker{
+    String path;
     String pwd;
     Context context;
+    final String separator="--*****--";
 
-    Locker(Context context, String path, String pwd) {
-        this.dirpath = path;
-        this.pwd = pwd;
-        this.context = context;
-
-
+    Locker(Context context,String path,String pwd){
+        this.path=path;
+        this.pwd=pwd;
+        this.context =context;
     }
 
 
-    public void lock() {
-        boolean isHead = true;
-        doCompression(dirpath);
-        try {
-            File f = new File(Environment.getExternalStorageDirectory().toString() + "/lockedfile.zip");
-            if (f.exists()) {
+    //The isTextFile method will be called to check whether the selected file is a text file.
+    // To improve the performance of locking and unlocking processes, text file and other types
+    // files will be encrypted differently .
+    public boolean isTextFile(String file){
 
-                FileInputStream fis = new FileInputStream(f);
-                File tempfile = new File(context.getFilesDir(), "temp.temp");
-                FileOutputStream fos = new FileOutputStream(tempfile);
-                FileChannel fc = fis.getChannel();
-                int pwdInt = bytearrayToInt(pwd.getBytes());
+        boolean isText=false;
+        String extension = MimeTypeMap.getFileExtensionFromUrl(file);
+        String mimeType= MimeTypeMap.getSingleton().getMimeTypeFromExtension(extension);
+        if(mimeType.startsWith("text/"))
+            isText=true;
+        return isText;
+    }
+
+    //If the selected file is not a text file, the locking or unlocking process is performed
+    // only at the header section of the file. So large audio, video, or image files can be
+    // locked or unlocked very fast. The size of header block is 1024 bytes.
+
+    public void lock(){
+        boolean isHead=true;
+        boolean isBody=false;
+        int blockSize=0;
+
+        try{
+            File f=new File(path);
+            //get previous pwd
+            if(f.exists()){
+                byte[] ppwd=getPwd();
+                if(ppwd!=null){
+                    MessageAlert.showAlert("Alreadly locked",context);
+                    return;
+                }
+                FileInputStream fis=new FileInputStream(f);
+                File tempfile=new File(context.getFilesDir(),"temp.temp");
+                FileOutputStream fos=new FileOutputStream(tempfile);
+                FileChannel fc=fis.getChannel();
+                int pwdInt=bytearrayToInt(pwd.getBytes());
                 int nRead;
-                int blockSize = 1024; //encrypt the first 1kb of the package
-                ByteBuffer bb = ByteBuffer.allocate(blockSize);
+                boolean isText=isTextFile(path);
+                if(isText){ //encrypting two parts of the text file
+                    blockSize=(int)f.length()/4; //25 percent of the file content
+                    ByteBuffer bb=ByteBuffer.allocate(blockSize);
 
-                while ((nRead = fc.read(bb)) != -1) {
-                    bb.position(0);
-                    bb.limit(nRead);
-                    //encrypt only the head section of the file
-                    if (isHead) {
-                        while (bb.hasRemaining())
-                            fos.write(bb.get() + pwdInt);
-                        isHead = false;
+                    while ( (nRead=fc.read( bb )) != -1 )
+                    {
+                        bb.position(0);
+                        bb.limit(nRead);
 
-                    } else {
-                        fos.write(bb.array());
+                        //encrypt the head section of the file
+                        if(isHead){
+                            while ( bb.hasRemaining())
+                                fos.write(bb.get()+pwdInt);
+                            isHead=false;
+                            isBody=true;
+                        }
+                        else if(isBody){
+                            //do not decrypt the body section of the file
+                            fos.write(bb.array());
+                            isBody=false;
+                        }
+                        else{//encrypt the footer section of the file
+                            while ( bb.hasRemaining())
+                                fos.write(bb.get()+pwdInt);
+                        }
+
+                        bb.clear();
+
                     }
-                    bb.clear();
-
                 }
 
+                else{
+                    blockSize=1024; //encrypt the first 1kb of the file for non-text file
+                    ByteBuffer bb=ByteBuffer.allocate(blockSize);
+
+                    while ( (nRead=fc.read( bb )) != -1 )
+                    {
+                        bb.position(0);
+                        bb.limit(nRead);
+                        //encrypt only the head section of the file
+                        if(isHead){
+                            while ( bb.hasRemaining())
+                                fos.write(bb.get()+pwdInt);
+                            isHead=false;
+
+                        }
+                        else{
+                            fos.write(bb.array());
+                        }
+                        bb.clear();
+
+                    }
+                }
 
                 fis.close();
                 fos.flush();
                 fos.close();
                 //replacing the file content
                 f.delete();
-                File file = new File(dirpath);
-                FileUtils.deleteQuietly(file);
-                File lockedFile = new File(getParentDir(dirpath) + File.separator + getName(dirpath) + ".locked");
-                copyFile(tempfile, lockedFile);
+                File lockedFile=new File(path);
+                copyFile(tempfile,lockedFile);
                 //delete the temp file
                 tempfile.delete();
                 //save the password
-                savePwd(pwd);
-
+                saveInfo(pwd,blockSize);
+                //make the file read only
+                lockedFile.setReadOnly();
 
             }
 
-        } catch (IOException e) {
-            e.printStackTrace();
-        }
-
+        }catch(IOException e){e.printStackTrace();}
     }
 
+   // The unlock method is called to unlock the locked file by decrypting parts of the file
+    // that were encrypted in the locking process. In the unlocking process every byte of each of
+    // the file content is subtracted by the sum of bytes previously added to every byte.
 
-    public void unlock() {
-        boolean isHead = true;
+    public void unlock(){
+        boolean isHead=true;
+        boolean isBody=false;
+        int pwdread=bytearrayToInt(getPwd());
+        int pwdbyte=bytearrayToInt(pwd.getBytes());
+        if(pwdbyte==pwdread){
 
-        try {
-            File f = new File(dirpath);
-            if (f.isFile()) {
-                FileInputStream fis = new FileInputStream(f);
-                File tempfile = new File(context.getFilesDir(), "temp.zip");
-                FileOutputStream fos = new FileOutputStream(tempfile);
-                FileChannel fc = fis.getChannel();
-                int blockSize = 1024;
-                ByteBuffer bb = ByteBuffer.allocate(blockSize);
-                int pwdInput = bytearrayToInt(pwd.getBytes());
-                int nRead;
-                while ((nRead = fc.read(bb)) != -1) {
-                    bb.position(0);
-                    bb.limit(nRead);
-                    //decrypt the head section of the file
-                    if (isHead) {
-                        while (bb.hasRemaining())
-                            fos.write(bb.get() - pwdInput);
-                        isHead = false;
+            try{
+                File f=new File(path);
+                if(f.exists()){
 
-                    } else
+                    FileInputStream fis=new FileInputStream(f);
+                    File tempfile=new File(context.getFilesDir(),"temp.temp");
+                    FileOutputStream fos=new FileOutputStream(tempfile);
+                    FileChannel fc=fis.getChannel();
+                    int pwdInt=bytearrayToInt(pwd.getBytes());
+                    int blockSize=getBlockSize();
+                    ByteBuffer bb=ByteBuffer.allocate(blockSize);
+                    int nRead;
+                    boolean isText=isTextFile(path);
+                    if(isText){ //decoding two parts of the text file
+                        while ( (nRead=fc.read( bb )) != -1 )
+                        {
+                            bb.position(0);
+                            bb.limit(nRead);
 
-                        fos.write(bb.array());
+                            //decrypt the head section of the file
+                            if(isHead){
+                                while ( bb.hasRemaining())
+                                    fos.write(bb.get()-pwdInt);
+                                isHead=false;
+                                isBody=true;
+                            }
+                            else if(isBody){
+                                //do not decrypt the body section of the file
+                                fos.write(bb.array());
+                                isBody=false;
+                            }
+                            else{//decrypt the footer section of the file
+                                while ( bb.hasRemaining())
+                                    fos.write(bb.get()-pwdInt);
+                            }
 
-                    bb.clear();
+                            bb.clear();
+
+                        }
+                    }
+
+                    else{
+
+                        while ( (nRead=fc.read( bb )) != -1 )
+                        {
+                            bb.position(0);
+                            bb.limit(nRead);
+                            //encrypting only the head section of the file
+                            if(isHead){
+                                while ( bb.hasRemaining())
+                                    fos.write(bb.get()-pwdInt);
+                                isHead=false;
+
+                            }
+                            else{
+                                fos.write(bb.array());
+                            }
+                            bb.clear();
+
+                        }
+                    }
+
+                    fis.close();
+                    fos.flush();
+                    fos.close();
+                    //Replacing the file content
+                    f.delete();
+                    File unlockedFile=new File(path);
+                    unlockedFile.setWritable(true);
+                    copyFile(tempfile,unlockedFile);
+                    //delete the temp file
+                    tempfile.delete();
+                    File filepwd=new File(context.getFilesDir(),getName(path));
+                    //delete the password
+                    filepwd.delete();
+
+
 
                 }
 
-
-                fis.close();
-                fos.flush();
-                fos.close();
-
-                //Replacing the file content
-                String dirParent = f.getParent();
-                f.delete();
-                File unlockedFile = new File(dirParent + "/unloacked.zip");
-                copyFile(tempfile, unlockedFile);
-                extractFile(unlockedFile.getPath(), dirParent);
-                unlockedFile.delete();
-                //delete the temp file
-                tempfile.delete();
-                //delete the password
-                File filepwd = new File(context.getFilesDir(), getName(dirpath));
-                filepwd.delete();
-
-
-            }
-
-        } catch (IOException e) {
-            e.printStackTrace();
+            }catch(IOException e){e.printStackTrace();}
         }
-
+        else{
+            MessageAlert.showAlert("Invalid password or file is not locked.",context);
+        }
     }
 
-
-    private void copyFile(File src, File dst) throws IOException {
-        FileInputStream fis = new FileInputStream(src);
-        FileOutputStream fos = new FileOutputStream(dst);
-        FileChannel inChannel = fis.getChannel();
+    // Thi method is invoked by the lock and unlock method to copy the content
+    // of the temporary file to the destination file in file content replacement process.
+    private void copyFile(File src, File dst) throws IOException
+    {
+        FileInputStream fis=new FileInputStream(src);
+        FileOutputStream fos=new FileOutputStream(dst);
+        FileChannel inChannel =fis.getChannel();
         FileChannel outChannel = fos.getChannel();
-        try {
+        try
+        {
             inChannel.transferTo(0, inChannel.size(), outChannel);
-        } catch (IOException e) {
-            e.printStackTrace();
-        } finally {
-            if (inChannel != null) {
+        }catch(IOException e){e.printStackTrace();}
+        finally
+        {
+            if (inChannel != null){
                 fis.close();
                 inChannel.close();
             }
-            if (outChannel != null) {
+            if (outChannel != null){
                 fos.close();
                 outChannel.close();
             }
 
         }
     }
-
-    public int bytearrayToInt(byte[] pwd) {
-        int b = 0;
-        if (pwd != null)
-            for (byte y : pwd) {
-                b = b + y;
+    // This sums all bytes in the input array of bytes.
+    // It is called to sum all bytes generated from the password text.
+    public int bytearrayToInt(byte[] pwd){
+        int b=0;
+        if(pwd!=null)
+            for(byte y:pwd){
+                b=b+y;
             }
         return b;
 
     }
 
-    public byte[] getPwd() {
-        byte[] password = null;
+    // The getPwd method converts the password text in to an array of bytes.
+    public byte[] getPwd(){
+        byte[] b=null;
         try {
-            File f = new File(context.getFilesDir(), getName(dirpath));
-            if (f.exists()) {
-                BufferedReader br = new BufferedReader(new FileReader(f));
-                password = br.readLine().getBytes();
+            File f=new File(context.getFilesDir(),getName(path));
+            if(f.exists()){
+                BufferedReader br=new BufferedReader(new FileReader(f));
+                String info=br.readLine();
+                b=info.substring(0,info.lastIndexOf(separator)).getBytes();
                 br.close();
             }
-        } catch (Exception e) {
+        } catch(Exception e) {
             // TODO Auto-generated catch block
             e.printStackTrace();
         }
 
-        return password;
+        return b;
+
+    }
+    //The getBlockSize method is invoked by the unlocking process to read the size of the encrypted
+    // block from the file that is saved in the locking process. So the unlocking process knows the
+    // block of bytes to be read and decrypted. This file stores the password text and the
+    // encrypted block size.
+
+    private int getBlockSize(){
+        int size=0;
+        try {
+            File f=new File(context.getFilesDir(),getName(path));
+            if(f.exists()){
+                BufferedReader br=new BufferedReader(new FileReader(f));
+                String info=br.readLine();
+                size=Integer.valueOf(info.substring(info.lastIndexOf(separator)+separator.length()));
+                br.close();
+            }
+        } catch(Exception e) {
+            // TODO Auto-generated catch block
+            e.printStackTrace();
+        }
+
+        return size;
 
     }
 
-
-    private void savePwd(String pwd) {
+    //The saveInfo method is invoked by the locking process to save the password text
+    // and the block size to a file. The password text and the block size is stored
+    // in the file in the form as shown below.
+    //password--*****--size
+    private void saveInfo(String pwd,int blockSize){
         try {
-
-            File f = new File(context.getFilesDir(), getName(dirpath) + ".locked");
-            BufferedWriter bw = new BufferedWriter(new FileWriter(f));
-            bw.write(pwd);
+            String fileName=getName(path);
+            File f=new File(context.getFilesDir(),fileName);
+            BufferedWriter bw=new BufferedWriter(new FileWriter(f));
+            String info=pwd+separator+blockSize;
+            bw.write(info);
             bw.close();
         } catch (Exception e) {
             // TODO Auto-generated catch block
@@ -221,151 +348,12 @@ class Locker {
 
     }
 
-    private String getName(String dirpath) {
-        return (dirpath.substring(dirpath.lastIndexOf("/") + 1));
+    // This method simply returns the file name of the selected file path.
+    private String getName(String path){
+        return(path.substring(path.lastIndexOf("/")+1));
     }
 
-    private String getParentDir(String dirpath) {
-        File file = new File(dirpath);
-        return (file.getParent());
-    }
 
-    public File doCompression(String src) {
-        File f = new File(src);
-        File fout = null;
-        ZipOutputStream zos = null;
-        try {
-            fout = new File(Environment.getExternalStorageDirectory().toString() + "/lockedfile.zip");
-            zos = new ZipOutputStream(new FileOutputStream(fout));
-            if (f.exists()) {
-                String path = getPath(f.getPath());
-                if (f.isDirectory()) {
-
-                    File[] files = f.listFiles();
-                    for (File sf : files) {
-                        compressDir(sf.getPath(), path, zos);
-                    }
-                }
-
-
-            } else {
-                Log.e("Error", "Soure not found!");
-            }
-            zos.close();
-
-        } catch (Exception e) {
-            e.printStackTrace();
-        }
-
-        return fout;
-
-    }
-
-    public String getPath(String srcpath) {
-
-        String path = "";
-        if (srcpath.endsWith(File.separator)) {
-            path = srcpath.substring(0, srcpath.length() - 1);
-            path = path.substring(path.lastIndexOf(File.separator) + 1);
-        } else
-            path = srcpath.substring(srcpath.lastIndexOf(File.separator) + 1);
-        return path;
-    }
-
-    public void compressDir(String srcpath, String path, ZipOutputStream zos) {
-        File fsrcdir = new File(srcpath);
-        String rpath = getPath(srcpath);
-
-        if (fsrcdir.isDirectory()) {
-            try {
-
-                rpath = path + File.separator + rpath;
-                zos.putNextEntry(new ZipEntry(rpath + File.separator));
-                zos.closeEntry();
-                File[] files = fsrcdir.listFiles();
-                for (File f : files) {
-                    if (f.isDirectory()) {
-                        compressDir(f.getPath(), rpath, zos);
-                    } else {
-                        compressFile(f.getPath(), rpath, zos);
-                    }
-                }
-
-            } catch (IOException e) {
-                // TODO Auto-generated catch block
-                e.printStackTrace();
-            }
-        } else {
-            compressFile(srcpath, path, zos);
-        }
-    }
-
-    public void compressFile(String srcfile, String path, ZipOutputStream zos) {
-        //write a new entry to the zip file
-        String rpath = getPath(srcfile);
-        try {
-            FileInputStream fis = new FileInputStream(srcfile);
-            int content = 0;
-            zos.putNextEntry(new ZipEntry(path + File.separator + rpath));
-            while ((content = fis.read()) != -1) {
-                zos.write(content);
-            }
-            zos.closeEntry();
-            fis.close();
-        } catch (Exception e) {
-            // TODO Auto-generated catch block
-            e.printStackTrace();
-        }
-
-    }
-
-    public void extractFile(String srcfile, String despath) {
-        try {
-            ZipFile zf = new ZipFile(srcfile); //create  a zip file object
-            if (zf.size() > 0) { //read through the zip file
-                Enumeration<ZipEntry> entries = (Enumeration<ZipEntry>) zf.entries();
-                while (entries.hasMoreElements()) {
-                    ZipEntry entry = entries.nextElement();
-                    if (!entry.isDirectory() && !entry.getName().endsWith("/")) {
-                        //start extracting the files
-                        extract(zf.getInputStream(entry), entry.getName(), despath);
-
-                    }
-
-                }
-
-            }
-            zf.close();
-
-        } catch (IOException e) {
-
-            e.printStackTrace();
-        }
-    }
-
-    public void extract(InputStream is, String fname, String storeDir) {
-
-        FileOutputStream fos;
-        //if(fname.endsWith(".locked")) fname=fname.substring(0, fname.lastIndexOf(".locked"));
-        File fi = new File(storeDir + File.separator + fname); //output file
-        File fparent = new File(fi.getParent());
-        fparent.mkdirs();//create parent directories for output files
-
-        try {
-
-            fos = new FileOutputStream(fi);
-            int content = 0;
-            while ((content = is.read()) != -1) {
-                fos.write(content);
-            }
-            is.close();
-            fos.close();
-        } catch (Exception e) {
-
-            e.printStackTrace();
-        }
-
-    }
 
 
 }

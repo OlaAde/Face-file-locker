@@ -20,16 +20,18 @@ import android.widget.EditText;
 import android.widget.ListView;
 import android.widget.TextView;
 import android.widget.Toast;
-
 public class MainActivity extends Activity {
+
 
     private String path="";
     private String selectedFile="";
     private Context context;
+    private ListAdapter listAdapter;
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_main);
         this.context=this;
+
     }
 
     protected void onStart(){
@@ -44,20 +46,13 @@ public class MainActivity extends Activity {
     }
 
     public void onBackPressed(){
-        goBack();
-    }
-
-    public void goBack(){
-        if( path != null){
-            if (path.length()>=1) {
-                //up one level of directory structure
-                File f=new File(path);
-                path=f.getParent();
-                listDirContents();
-            }
+        if(path.length()>1){ //up one level of directory structure
+            File f=new File(path);
+            path=f.getParent();
+            listDirContents();
         }
         else{
-            //refreshThumbnails();
+            refreshThumbnails();
             System.exit(0); //exit app
 
         }
@@ -65,8 +60,7 @@ public class MainActivity extends Activity {
 
 
     private void refreshThumbnails(){
-        context.sendBroadcast(new Intent(Intent.ACTION_MEDIA_MOUNTED,
-                Uri.parse("file://"+ Environment.getExternalStorageDirectory())));
+        context.sendBroadcast(new Intent(Intent.ACTION_MEDIA_MOUNTED, Uri.parse("file://"+ Environment.getExternalStorageDirectory())));
     }
     public boolean onCreateOptionsMenu(Menu menu) {
         // Inflate the menu; this adds items to the action bar if it is present.
@@ -80,8 +74,7 @@ public class MainActivity extends Activity {
             //selected item
             ViewGroup vg=(ViewGroup)view;
             String selectedItem = ((TextView) vg.findViewById(R.id.label)).getText().toString();
-            path = path + "/" + selectedItem;
-            Toast.makeText(MainActivity.this,path,Toast.LENGTH_SHORT).show();
+            path=path+"/"+selectedItem;
             //et.setText(path);
             listDirContents();
         }
@@ -92,33 +85,30 @@ public class MainActivity extends Activity {
 
 
     private void listDirContents(){
-        ListView listView=(ListView) findViewById(R.id.files_list);
+        ListView l=(ListView) findViewById(R.id.files_list);
         if(path!=null){
-            Toast.makeText(MainActivity.this,path + "mmmd",Toast.LENGTH_SHORT).show();
-
             try{
-                File f = new File(path);
+                File f=new File(path);
                 if(f!=null){
                     if(f.isDirectory()){
                         String[] contents=f.list();
                         if(contents.length>0){
-                            selectedFile = path;
                             //create the data source for the list
-                            ListAdapter listAdapter = new ListAdapter(this,R.layout.list_layout,R.id.label,contents,path);
+                          listAdapter = new ListAdapter(this,R.layout.list_layout,R.id.label,contents,path);
                             //supply the data source to the list so that they are ready to display
-                            listView.setAdapter(listAdapter);
+                            l.setAdapter(listAdapter);
                         }
                         else
                         {
                             //keep track the parent directory of empty directory
-                            path=f.getParent();
+                            path = f.getParent();
                         }
                     }
                     else{
                         //capture the selected file path
-                        selectedFile=path;
+                        selectedFile = path;
                         //keep track the parent directory of the selected file
-                        path=f.getParent();
+                        path = f.getParent();
 
                     }
                 }
@@ -128,19 +118,18 @@ public class MainActivity extends Activity {
 
     }
 
-    public void lockFolder(View view){
+    public void lockFile(View view){
         EditText txtpwd=(EditText)findViewById(R.id.txt_input);
         String pwd=txtpwd.getText().toString();
-        File f=new File(selectedFile);
         if(pwd.length()>0){
 
-            if(f.isDirectory()){
+            if(selectedFile.length()>0){
                 BackTaskLock btlock=new BackTaskLock();
                 btlock.execute(pwd,null,null);
 
             }
             else{
-                MessageAlert.showAlert("It is not a folder.",context);
+                MessageAlert.showAlert("Please a select a file to lock",context);
             }
         }
         else{
@@ -153,26 +142,19 @@ public class MainActivity extends Activity {
         locker.lock();
     }
 
-    public void unlockFolder(View view){
+    public void unlockFile(View view){
         EditText txtpwd=(EditText)findViewById(R.id.txt_input);
         String pwd=txtpwd.getText().toString();
-        File f=new File(selectedFile);
         if(pwd.length()>0){
 
-            if(f.isFile()){
+            if(selectedFile.length()>0){
 
-                if(isMatched(pwd)){
-                    BackTaskUnlock btunlock=new BackTaskUnlock();
-                    btunlock.execute(pwd,null,null);
-                }
-                else{
-                    MessageAlert.showAlert("Invalid password or folder not locked",context);
-                }
+                BackTaskUnlock btunlock=new BackTaskUnlock();
+                btunlock.execute(pwd,null,null);
 
             }
-
             else{
-                MessageAlert.showAlert("Please select a locked folder to unlock",context);
+                MessageAlert.showAlert("Please select a file to unlock",context);
             }
         }
         else{
@@ -181,14 +163,9 @@ public class MainActivity extends Activity {
 
     }
 
-    public boolean isMatched(String pwd){
-        boolean mat=false;
-        Locker locker=new Locker(context, selectedFile, pwd);
-        byte[] pas=locker.getPwd();
-        int pwdRead=locker.bytearrayToInt(pas);
-        int pwdInput=locker.bytearrayToInt(pwd.getBytes());
-        if(pwdRead==pwdInput) mat=true;
-        return mat;
+    public void startUnlock(String pwd){
+        Locker locker=new Locker(context,selectedFile,pwd);
+        locker.unlock();
     }
 
     private class BackTaskLock extends AsyncTask<String,Void,Void>{
@@ -197,7 +174,7 @@ public class MainActivity extends Activity {
             super.onPreExecute();
             //show process dialog
             pd = new ProgressDialog(context);
-            pd.setTitle("Locking the folder");
+            pd.setTitle("Locking the file");
             pd.setMessage("Please wait.");
             pd.setCancelable(true);
             pd.setIndeterminate(true);
@@ -218,18 +195,12 @@ public class MainActivity extends Activity {
         }
         protected void onPostExecute(Void result){
             pd.dismiss();
-            goBack();
+            listDirContents();
+
         }
 
 
     }
-
-
-    public void startUnlock(String pwd){
-        Locker locker=new Locker(context,selectedFile,pwd);
-        locker.unlock();
-    }
-
 
     private class BackTaskUnlock extends AsyncTask<String,Void,Void>{
         ProgressDialog pd;
@@ -237,7 +208,7 @@ public class MainActivity extends Activity {
             super.onPreExecute();
             //show process dialog
             pd = new ProgressDialog(context);
-            pd.setTitle("Unlocking the folder");
+            pd.setTitle("UnLocking the file");
             pd.setMessage("Please wait.");
             pd.setCancelable(true);
             pd.setIndeterminate(true);
@@ -252,17 +223,15 @@ public class MainActivity extends Activity {
 
             }catch(Exception e){
                 pd.dismiss();   //close the dialog if error occurs
-
             }
             return null;
 
         }
         protected void onPostExecute(Void result){
             pd.dismiss();
-            listDirContents();//refresh the list
+            listDirContents();
+
         }
-
-
     }
 
 

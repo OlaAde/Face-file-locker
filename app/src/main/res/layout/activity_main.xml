@@ -28,14 +28,14 @@
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:text="@string/label_lock"
-            android:onClick="lockFolder"
+            android:onClick="lockFile"
             />
         <Button
             android:id="@+id/bt_unlock"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:text="@string/label_unlock"
-            android:onClick="unlockFolder"
+            android:onClick="unlockFile"
             />
     </LinearLayout>
     <TextView
