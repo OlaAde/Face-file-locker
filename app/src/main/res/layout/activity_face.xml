@@ -1,0 +1,67 @@
+<?xml version="1.0" encoding="utf-8"?>
+<RelativeLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    xmlns:tools="http://schemas.android.com/tools"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    tools:context="com.example.android.faceapplocker.FaceActivity">
+
+
+    <Button
+        android:id="@+id/add_a_name"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_alignParentLeft="true"
+        android:layout_alignParentTop="true"
+        android:text="Add name"/>
+
+    <Button
+        android:id="@+id/detect_face"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_alignParentLeft="true"
+        android:layout_below="@id/add_a_name"
+        android:layout_marginTop="39dp"
+        android:text="Detect Face"/>
+
+    <Button
+        android:id="@+id/Snap"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_alignParentRight="true"
+        android:layout_alignParentTop="true"
+        android:text="Take Snapshot"/>
+
+
+
+
+    <TextView
+        android:id="@+id/detected_face_name"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_alignParentBottom="true"
+        android:layout_alignParentRight="true"
+        android:text=""
+        tools:text="Abdulrahman" />
+
+    <EditText
+        android:id="@+id/name"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_above="@id/detected_face_name"
+        android:layout_centerHorizontal="true"
+        android:ems="10">
+
+        <requestFocus/>
+    </EditText>
+
+    <ImageView
+        android:id="@+id/snapshot"
+        android:layout_width="100dp"
+        android:layout_height="100dp"
+        android:layout_alignParentBottom="true"
+        android:layout_centerHorizontal="true"
+        android:layout_toRightOf="@id/name"
+        android:src="@android:drawable/ic_menu_search"/>
+
+    </RelativeLayout>
