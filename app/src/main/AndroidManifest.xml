@@ -17,6 +17,13 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
+
+	<activity android:name=".FaceActivity"
+		android:label="@string/app_name">
+	</activity>
+	<activity android:name=".ModelClass"
+		android:label="@string/app_name">
+	</activity>
     </application>
 
 </manifest>
